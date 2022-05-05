@@ -11,7 +11,7 @@ using Network;
 
 namespace Oxide.Plugins
 {
-    [Info("Automated Workcart Notifications", "WhiteThunder", "0.1.0")]
+    [Info("Automated Workcart Notifications", "WhiteThunder", "0.1.1")]
     [Description("Notifies players via chat when Automated Workcarts stop nearby.")]
     internal class AutomatedWorkcartNotifications : CovalencePlugin
     {
@@ -79,7 +79,7 @@ namespace Oxide.Plugins
                 if (workcart == null || workcart.IsDestroyed)
                     return;
 
-                if (chatConfig.MaxSpeed != 0 && workcart.TrackSpeed > chatConfig.MaxSpeed)
+                if (chatConfig.MaxSpeed != 0 && workcart.GetTrackSpeed() > chatConfig.MaxSpeed)
                     return;
 
                 var workcartPosition = workcart.transform.position;
