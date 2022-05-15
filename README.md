@@ -20,7 +20,7 @@ The Automated Workcarts plugin allows you to assign custom commands to each work
 ## Example usage
 
 1. Go to a workcart trigger where you would like to add a notification.
-2. Aim at the trigger and run the command `awt.addcommand workcart.notify $id Stopped 5`.
+2. Aim at the trigger and run the command `awt.addcommand workcart.notify $id Arrived 5`.
 3. Aim at the trigger and run the command `awt.addcommand workcart.notify $id DepartingSoon 15`.
 
 When an automated workcarts collides with that trigger, it will:
