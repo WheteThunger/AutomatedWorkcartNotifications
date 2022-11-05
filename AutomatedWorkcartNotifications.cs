@@ -9,20 +9,31 @@ using Network;
 
 namespace Oxide.Plugins
 {
-    [Info("Automated Workcart Notifications", "WhiteThunder", "0.1.1")]
+    [Info("Automated Workcart Notifications", "WhiteThunder", "0.2.0")]
     [Description("Notifies players via chat when Automated Workcarts stop nearby.")]
     internal class AutomatedWorkcartNotifications : CovalencePlugin
     {
         #region Fields
 
         [PluginReference]
-        private Plugin AutomatedWorkcarts;
+        private readonly Plugin AutomatedWorkcarts;
 
         private Configuration _pluginConfig;
+        private object[] _objectArrayForChatCommand;
 
         #endregion
 
         #region Hooks
+
+        private void Init()
+        {
+            _objectArrayForChatCommand = new object[3]
+            {
+                2.ToString(),
+                _pluginConfig.ChatSteamIdIcon.ToString(),
+                null,
+            };
+        }
 
         private void OnServerInitialized()
         {
@@ -42,26 +53,26 @@ namespace Oxide.Plugins
             if (!player.IsServer)
                 return;
 
-            uint workcartId;
-            if (args.Length < 3 || !uint.TryParse(args[0], out workcartId))
+            uint trainEngineId;
+            if (args.Length < 3 || !uint.TryParse(args[0], out trainEngineId))
             {
-                LogError($"Invalid syntax. Expected: {cmd} <workcart_id> <notification_name> <delay_seconds>");
+                LogError($"Invalid syntax. Expected: {cmd} <train_engine_id> <notification_name> <delay_seconds>");
                 return;
             }
 
-            var workcart = BaseNetworkable.serverEntities.Find(workcartId) as TrainEngine;
-            if (workcart == null || workcart.IsDestroyed)
+            var trainEngine = BaseNetworkable.serverEntities.Find(trainEngineId) as TrainEngine;
+            if (trainEngine == null || trainEngine.IsDestroyed)
             {
-                LogError($"No workcart found with ID: {workcartId}. Make sure you are using '$id' parameter.");
+                LogError($"No train engine found with ID: {trainEngineId}. Make sure you are using '$id' parameter.");
                 return;
             }
 
-            var chatConfigKey = args[1];
+            var notificationConfigKey = args[1];
 
-            ChatConfig chatConfig;
-            if (!_pluginConfig.ChatNotifications.TryGetValue(chatConfigKey, out chatConfig))
+            NotificationConfig notificationConfig;
+            if (!_pluginConfig.Notifications.TryGetValue(notificationConfigKey, out notificationConfig))
             {
-                LogError($"Invalid chat config: '{chatConfigKey}'");
+                LogError($"Invalid notification config: '{notificationConfigKey}'");
                 return;
             }
 
@@ -72,52 +83,7 @@ namespace Oxide.Plugins
                 return;
             }
 
-            timer.Once(notificationDelay, () =>
-            {
-                if (workcart == null || workcart.IsDestroyed)
-                    return;
-
-                if (chatConfig.MaxSpeed != 0 && workcart.GetTrackSpeed() > chatConfig.MaxSpeed)
-                    return;
-
-                var workcartPosition = workcart.transform.position;
-
-                var networkGroup = Net.sv.visibility.GetGroup(workcartPosition);
-                if (networkGroup == null)
-                    return;
-
-                var maxDistanceSquared = Math.Pow(chatConfig.MaxDistance, 2);
-
-                foreach (var connection in networkGroup.subscribers)
-                {
-                    if (!connection.active)
-                        continue;
-
-                    var basePlayer = connection.player as BasePlayer;
-                    if (basePlayer == null)
-                        continue;
-
-                    if (basePlayer.GetParentEntity() is TrainCar)
-                        continue;
-
-                    if (basePlayer.GetMounted() is TrainCar)
-                        continue;
-
-                    if (basePlayer.SqrDistance(workcartPosition) > maxDistanceSquared)
-                        continue;
-
-                    if (args.Length > 3)
-                    {
-                        ChatMessage(basePlayer, string.Join(",", SkipArgs(args, 3)));
-                    }
-
-                    var message = args.Length > 3
-                        ? GetMessage(basePlayer.UserIDString, chatConfigKey, SkipArgs(args, 3))
-                        : GetMessage(basePlayer.UserIDString, chatConfigKey);
-
-                    ChatMessage(basePlayer, message, _pluginConfig.ChatSteamIdIcon);
-                }
-            });
+            ScheduleNotification(args, trainEngine, notificationConfigKey, notificationDelay, notificationConfig);
         }
 
         #endregion
@@ -134,16 +100,82 @@ namespace Oxide.Plugins
             return newArgs;
         }
 
-        private void ChatMessage(BasePlayer player, string message, ulong steamId = 0)
+        private void ChatMessage(BasePlayer player, string message)
         {
-            player.SendConsoleCommand("chat.add", 2, steamId, message);
+            _objectArrayForChatCommand[2] = message;
+            player.SendConsoleCommand("chat.add", _objectArrayForChatCommand);
+        }
+
+        private void ScheduleNotification(string[] args, TrainEngine trainEngine, string notificationConfigKey, float notificationDelay, NotificationConfig notificationConfig)
+        {
+            timer.Once(notificationDelay, () =>
+            {
+                if (trainEngine == null || trainEngine.IsDestroyed)
+                    return;
+
+                if (notificationConfig.MaxSpeed != 0 && trainEngine.GetTrackSpeed() > notificationConfig.MaxSpeed)
+                    return;
+
+                var trainEnginePosition = trainEngine.transform.position;
+
+                var networkGroup = Net.sv.visibility.GetGroup(trainEnginePosition);
+                if (networkGroup == null)
+                    return;
+
+                var maxDistanceSquared = Math.Pow(notificationConfig.MaxDistance, 2);
+
+                foreach (var connection in networkGroup.subscribers)
+                {
+                    if (!connection.active)
+                        continue;
+
+                    var basePlayer = connection.player as BasePlayer;
+                    if (basePlayer == null)
+                        continue;
+
+                    if (basePlayer.GetParentEntity() is TrainCar)
+                        continue;
+
+                    if (basePlayer.GetMounted() is TrainCar)
+                        continue;
+
+                    if (basePlayer.SqrDistance(trainEnginePosition) > maxDistanceSquared)
+                        continue;
+
+                    if (notificationConfig.EnableChatMessage)
+                    {
+                        if (args.Length > 3)
+                        {
+                            ChatMessage(basePlayer, string.Join(",", SkipArgs(args, 3)));
+                        }
+
+                        var message = args.Length > 3
+                            ? GetMessage(basePlayer.UserIDString, notificationConfigKey, SkipArgs(args, 3))
+                            : GetMessage(basePlayer.UserIDString, notificationConfigKey);
+
+                        ChatMessage(basePlayer, message);
+                    }
+
+                    if (notificationConfig.HornDuration > 0 && !trainEngine.HasFlag(TrainEngine.Flag_Horn))
+                    {
+                        trainEngine.SetFlag(TrainEngine.Flag_Horn, true);
+                        trainEngine.Invoke(() => trainEngine.SetFlag(TrainEngine.Flag_Horn, false), notificationConfig.HornDuration);
+                    }
+                }
+            });
         }
 
         #endregion
 
         #region Configuration
 
-        private class ChatConfig
+        private class CaseInsensitiveDictionary<TValue> : Dictionary<string, TValue>
+        {
+            public CaseInsensitiveDictionary() : base(StringComparer.OrdinalIgnoreCase) {}
+        }
+
+        [JsonObject(MemberSerialization.OptIn)]
+        private class DeprecatedChatConfig
         {
             [JsonProperty("Max distance")]
             public float MaxDistance = 30;
@@ -152,24 +184,62 @@ namespace Oxide.Plugins
             public float MaxSpeed;
         }
 
+        [JsonObject(MemberSerialization.OptIn)]
+        private class NotificationConfig
+        {
+            [JsonProperty("Broadcast chat message")]
+            public bool EnableChatMessage;
+
+            [JsonProperty("Horn duration (seconds)")]
+            public float HornDuration;
+
+            [JsonProperty("Max distance")]
+            public float MaxDistance = 30;
+
+            [JsonProperty("Max speed", DefaultValueHandling = DefaultValueHandling.Ignore)]
+            public float MaxSpeed;
+        }
+
+        [JsonObject(MemberSerialization.OptIn)]
         private class Configuration : BaseConfiguration
         {
             [JsonProperty("Chat SteamID icon")]
             public ulong ChatSteamIdIcon;
 
-            [JsonProperty("Chat notifications")]
-            public Dictionary<string, ChatConfig> ChatNotifications = new Dictionary<string, ChatConfig>
+            [JsonProperty("Notifications", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public CaseInsensitiveDictionary<NotificationConfig> Notifications = new CaseInsensitiveDictionary<NotificationConfig>
             {
-                ["Arrived"] = new ChatConfig
+                ["Arrived"] = new NotificationConfig
                 {
+                    EnableChatMessage = true,
+                    HornDuration = 0,
                     MaxDistance = 40,
                 },
-                ["DepartingSoon"] = new ChatConfig
+                ["DepartingSoon"] = new NotificationConfig
                 {
+                    EnableChatMessage = true,
+                    HornDuration = 0,
                     MaxDistance = 20,
                     MaxSpeed = 1,
                 },
             };
+
+            [JsonProperty("Chat notifications")]
+            private Dictionary<string, DeprecatedChatConfig> DeprecatedChatNotifications
+            {
+                set
+                {
+                    foreach (var entry in value)
+                    {
+                        Notifications[entry.Key] = new NotificationConfig
+                        {
+                            EnableChatMessage = true,
+                            MaxDistance = entry.Value.MaxDistance,
+                            MaxSpeed = entry.Value.MaxSpeed,
+                        };
+                    }
+                }
+            }
         }
 
         private Configuration GetDefaultConfig() => new Configuration();
@@ -316,16 +386,19 @@ namespace Oxide.Plugins
             foreach (var langEntry in LangEntry.AllLangEntries)
             {
                 // Only add the default lang entries for valid config entries.
-                if (_pluginConfig.ChatNotifications.ContainsKey(langEntry.Name))
+                if (_pluginConfig.Notifications.ContainsKey(langEntry.Name))
                 {
                     englishLangKeys[langEntry.Name] = langEntry.English;
                 }
             }
 
-            foreach (var chatConfigEntry in _pluginConfig.ChatNotifications)
+            foreach (var notificationEntry in _pluginConfig.Notifications)
             {
-                // Only add placeholder lang entries for config entries that have no plugin defaults.
-                englishLangKeys.TryAdd(chatConfigEntry.Key, chatConfigEntry.Key);
+                if (notificationEntry.Value.EnableChatMessage)
+                {
+                    // Only add placeholder lang entries for config entries that have no plugin defaults.
+                    englishLangKeys.TryAdd(notificationEntry.Key, notificationEntry.Key);
+                }
             }
 
             lang.RegisterMessages(englishLangKeys, this, "en");
