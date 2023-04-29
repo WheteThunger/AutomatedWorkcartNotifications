@@ -9,7 +9,7 @@ using Network;
 
 namespace Oxide.Plugins
 {
-    [Info("Automated Workcart Notifications", "WhiteThunder", "0.2.0")]
+    [Info("Automated Workcart Notifications", "WhiteThunder", "0.2.1")]
     [Description("Notifies players via chat when Automated Workcarts stop nearby.")]
     internal class AutomatedWorkcartNotifications : CovalencePlugin
     {
@@ -53,14 +53,14 @@ namespace Oxide.Plugins
             if (!player.IsServer)
                 return;
 
-            uint trainEngineId;
-            if (args.Length < 3 || !uint.TryParse(args[0], out trainEngineId))
+            ulong trainEngineId;
+            if (args.Length < 3 || !ulong.TryParse(args[0], out trainEngineId))
             {
                 LogError($"Invalid syntax. Expected: {cmd} <train_engine_id> <notification_name> <delay_seconds>");
                 return;
             }
 
-            var trainEngine = BaseNetworkable.serverEntities.Find(trainEngineId) as TrainEngine;
+            var trainEngine = BaseNetworkable.serverEntities.Find(new NetworkableId(trainEngineId)) as TrainEngine;
             if (trainEngine == null || trainEngine.IsDestroyed)
             {
                 LogError($"No train engine found with ID: {trainEngineId}. Make sure you are using '$id' parameter.");
