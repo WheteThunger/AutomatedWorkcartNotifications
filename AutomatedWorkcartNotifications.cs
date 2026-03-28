@@ -5,11 +5,10 @@ using Oxide.Core.Plugins;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Network;
 
 namespace Oxide.Plugins
 {
-    [Info("Automated Workcart Notifications", "WhiteThunder", "0.2.1")]
+    [Info("Automated Workcart Notifications", "WhiteThunder", "0.2.2")]
     [Description("Notifies players via chat when Automated Workcarts stop nearby.")]
     internal class AutomatedWorkcartNotifications : CovalencePlugin
     {
@@ -116,51 +115,47 @@ namespace Oxide.Plugins
                 if (notificationConfig.MaxSpeed != 0 && trainEngine.GetTrackSpeed() > notificationConfig.MaxSpeed)
                     return;
 
-                var trainEnginePosition = trainEngine.transform.position;
+                var nearbyPlayers = Facepunch.Pool.Get<List<BasePlayer>>();
+                BaseNetworkable.GetCloseConnections(trainEngine.transform.position, notificationConfig.MaxDistance, nearbyPlayers);
 
-                var networkGroup = Net.sv.visibility.GetGroup(trainEnginePosition);
-                if (networkGroup == null)
-                    return;
-
-                var maxDistanceSquared = Math.Pow(notificationConfig.MaxDistance, 2);
-
-                foreach (var connection in networkGroup.subscribers)
+                try
                 {
-                    if (!connection.active)
-                        continue;
-
-                    var basePlayer = connection.player as BasePlayer;
-                    if (basePlayer == null)
-                        continue;
-
-                    if (basePlayer.GetParentEntity() is TrainCar)
-                        continue;
-
-                    if (basePlayer.GetMounted() is TrainCar)
-                        continue;
-
-                    if (basePlayer.SqrDistance(trainEnginePosition) > maxDistanceSquared)
-                        continue;
-
-                    if (notificationConfig.EnableChatMessage)
+                    foreach (var basePlayer in nearbyPlayers)
                     {
-                        if (args.Length > 3)
+                        if (basePlayer == null || !basePlayer.CanInteract())
+                            continue;
+
+                        if (basePlayer.GetParentEntity() is TrainCar)
+                            continue;
+
+                        if (basePlayer.GetMounted() is TrainCar)
+                            continue;
+
+                        if (notificationConfig.EnableChatMessage)
                         {
-                            ChatMessage(basePlayer, string.Join(",", SkipArgs(args, 3)));
+                            if (args.Length > 3)
+                            {
+                                ChatMessage(basePlayer, string.Join(",", SkipArgs(args, 3)));
+                            }
+
+                            var message = args.Length > 3
+                                ? GetMessage(basePlayer.UserIDString, notificationConfigKey, SkipArgs(args, 3))
+                                : GetMessage(basePlayer.UserIDString, notificationConfigKey);
+
+                            ChatMessage(basePlayer, message);
                         }
 
-                        var message = args.Length > 3
-                            ? GetMessage(basePlayer.UserIDString, notificationConfigKey, SkipArgs(args, 3))
-                            : GetMessage(basePlayer.UserIDString, notificationConfigKey);
-
-                        ChatMessage(basePlayer, message);
+                        if (notificationConfig.HornDuration > 0 && !trainEngine.HasFlag(TrainEngine.Flag_Horn))
+                        {
+                            trainEngine.SetFlag(TrainEngine.Flag_Horn, true);
+                            trainEngine.Invoke(() => trainEngine.SetFlag(TrainEngine.Flag_Horn, false),
+                                notificationConfig.HornDuration);
+                        }
                     }
-
-                    if (notificationConfig.HornDuration > 0 && !trainEngine.HasFlag(TrainEngine.Flag_Horn))
-                    {
-                        trainEngine.SetFlag(TrainEngine.Flag_Horn, true);
-                        trainEngine.Invoke(() => trainEngine.SetFlag(TrainEngine.Flag_Horn, false), notificationConfig.HornDuration);
-                    }
+                }
+                finally
+                {
+                    Facepunch.Pool.FreeUnmanaged(ref nearbyPlayers);
                 }
             });
         }
