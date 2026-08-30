@@ -8,7 +8,7 @@ using System.Linq;
 
 namespace Oxide.Plugins
 {
-    [Info("Automated Workcart Notifications", "WhiteThunder", "0.2.2")]
+    [Info("Automated Workcart Notifications", "WhiteThunder", "0.2.3")]
     [Description("Notifies players via chat when Automated Workcarts stop nearby.")]
     internal class AutomatedWorkcartNotifications : CovalencePlugin
     {
@@ -147,8 +147,13 @@ namespace Oxide.Plugins
 
                         if (notificationConfig.HornDuration > 0 && !trainEngine.HasFlag(TrainEngine.Flag_Horn))
                         {
-                            trainEngine.SetFlag(TrainEngine.Flag_Horn, true);
-                            trainEngine.Invoke(() => trainEngine.SetFlag(TrainEngine.Flag_Horn, false),
+                            using var trainEngineSetFlagsScope = trainEngine.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate_Flags);
+                            trainEngineSetFlagsScope.Set(TrainEngine.Flag_Horn, true);
+                            trainEngine.Invoke(() =>
+                                {
+                                    using var trainEngineSetFlagsScopeInner = trainEngine.StartSetFlags(BaseEntity.FlagsUpdateMode.SendNetworkUpdate_Flags);
+                                    trainEngineSetFlagsScopeInner.Set(TrainEngine.Flag_Horn, false);
+                                },
                                 notificationConfig.HornDuration);
                         }
                     }
